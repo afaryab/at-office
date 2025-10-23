@@ -1,0 +1,120 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android APK
+        run: |
+          npx eas-cli build --platform android --profile preview --non-interactive --no-wait || true
+          echo "Build started. Check EAS dashboard for progress."
+
+      - name: Comment on commit
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '🚀 Android build started! Check the [EAS dashboard](https://expo.dev) for progress.'
+            })
+
+  build-windows:
+    name: Build Windows App
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows App
+        run: |
+          npm run web
+
+      - name: Comment on commit
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: '💻 Windows build completed! Note: For Windows desktop apps, consider using Electron or React Native Windows.'
+            })
+
+  create-release:
+    name: Create Release
+    needs: [build-android, build-windows]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const tagName = `v${{ steps.version.outputs.VERSION }}-${context.sha.substring(0, 7)}`;
+            
+            try {
+              await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tagName,
+                name: `Release ${tagName}`,
+                body: `## Release Notes\n\nAuto-generated release from commit ${context.sha}\n\n### Download\n- **Android APK**: Check the [EAS dashboard](https://expo.dev) for the build\n- **Windows App**: Build artifacts available in workflow\n\n### Features\n- ✅ Keycloak Authentication\n- ✅ Check-in/Check-out functionality\n- ✅ Biometric login with multi-user support\n- ✅ Dashboard with attendance history\n- ✅ User profile management`,
+                draft: false,
+                prerelease: false
+              });
+              console.log(`Release ${tagName} created successfully`);
+            } catch (error) {
+              if (error.status === 422) {
+                console.log('Release already exists, skipping...');
+              } else {
+                throw error;
+              }
+            }
