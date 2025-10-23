@@ -6,10 +6,17 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: write
+  issues: write
+
 jobs:
   build-android:
     name: Build Android APK
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     
     steps:
       - name: Checkout code
@@ -50,6 +57,9 @@ jobs:
   build-windows:
     name: Build Windows App
     runs-on: windows-latest
+    permissions:
+      contents: read
+      issues: write
     
     steps:
       - name: Checkout code
@@ -85,6 +95,8 @@ jobs:
     needs: [build-android, build-windows]
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
     
     steps:
       - name: Checkout code
